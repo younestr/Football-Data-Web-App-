@@ -1,6 +1,27 @@
-import streamlit as st 
-import requests 
+import streamlit as st
+import requests
 import pandas as pd
+import mysql.connector
+
+# Connect to MySQL database
+db = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    passwd="password",
+    database="myDB"
+)
+cursor = db.cursor()
+
+# Function to authenticate users
+def authenticate(username, password):
+    cursor.execute("SELECT * FROM users WHERE username = %s AND password = %s", (username, password))
+    user = cursor.fetchone()
+    return user is not None
+
+def register(username, password):
+    cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, password))
+    db.commit()
+    st.success("Registration successful")
 
 st.title('World Football Leagues Dashboard')
 st.sidebar.title('Widget Section')
@@ -81,76 +102,117 @@ def fetch_teams():
     else:
         return None
 
-data1 = fetch_data1()
+def flatten_current_team(data):
+    current_team = data.pop('currentTeam')
+    data.update(current_team['area'])
+    data['currentTeam_id'] = current_team['id']
+    data['currentTeam_name'] = current_team['name']
+    data['currentTeam_shortName'] = current_team['shortName']
+    data['currentTeam_tla'] = current_team['tla']
+    data['currentTeam_crest'] = current_team['crest']
+    data['currentTeam_address'] = current_team['address']
+    data['currentTeam_website'] = current_team['website']
+    data['currentTeam_founded'] = current_team['founded']
+    data['currentTeam_clubColors'] = current_team['clubColors']
+    data['currentTeam_venue'] = current_team['venue']
+    data['currentTeam_runningCompetitions'] = current_team['runningCompetitions']
+    data['currentTeam_contract_start'] = current_team['contract']['start']
+    data['currentTeam_contract_until'] = current_team['contract']['until']
+    return data
 
-area_dict = {}
-comp_dict = {}
+def main():
+    st.sidebar.title("Authentication")
+    choice = st.sidebar.radio("Menu", ["Login", "Register"])
 
-if data1:
-    for i in range(len(data1['competitions'])):
-        area_dict[data1['competitions'][i]['area']['name']] = 0
-        comp_dict[data1['competitions'][i]['name']] = 0
+    if choice == "Login":
+        st.title("User Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            if authenticate(username, password):
+                st.success("Login successful")
+                data1 = fetch_data1()
 
-    for i in range(len(data1['competitions'])):
-        area_dict[data1['competitions'][i]['area']['name']] += 1
-        comp_dict[data1['competitions'][i]['name']] += 1
+                area_dict = {}
+                comp_dict = {}
 
-    area_df = pd.DataFrame(area_dict.items(), columns=['Country Name', 'Count'])
-    comp_df = pd.DataFrame(comp_dict.items(), columns=['League Name','Count'])
+                if data1:
+                    for i in range(len(data1['competitions'])):
+                        area_dict[data1['competitions'][i]['area']['name']] = 0
+                        comp_dict[data1['competitions'][i]['name']] = 0
 
-    st.write("### Country-wise League Counts")
-    st.dataframe(area_df, height=800 , width=800)
+                    for i in range(len(data1['competitions'])):
+                        area_dict[data1['competitions'][i]['area']['name']] += 1
+                        comp_dict[data1['competitions'][i]['name']] += 1
 
-    st.write("### League-wise Count")
-    st.dataframe(comp_df, height=800 , width=800)
+                    area_df = pd.DataFrame(area_dict.items(), columns=['Country Name', 'Count'])
+                    comp_df = pd.DataFrame(comp_dict.items(), columns=['League Name','Count'])
 
-# Standings data
-st.write("## Standings Data")
-st.sidebar.title('Select Options')
+                    st.write("### Country-wise League Counts")
+                    st.dataframe(area_df, height=800 , width=800)
 
-# Sidebar inputs for match schedules
-competition_id = st.sidebar.text_input('Enter Competition ID (e.g., PL for Premier League):')
-matchday = st.sidebar.number_input('Enter Matchday:', min_value=1)
+                    st.write("### League-wise Count")
+                    st.dataframe(comp_df, height=800 , width=800)
 
-# Fetch match schedules data based on user input
-if competition_id:
-    match_schedules_data = fetch_match_schedules_data(competition_id, matchday)
+                # Standings data
+                st.write("## Standings Data")
+                st.sidebar.title('Select Options')
 
-    # Display the fetched match schedules data
-    if match_schedules_data and 'matches' in match_schedules_data:
-        # Extract relevant match information
-        match_info = extract_match_info(match_schedules_data['matches'])
-        
-        # Convert extracted data to DataFrame
-        df = pd.DataFrame(match_info)
-        
-        # Display DataFrame
-        st.write("### Match Schedules Data")
-        st.dataframe(df)
-    else:
-        st.write("No match schedules data available for the specified input.")
-else:
-    st.write("Please enter a Competition ID.")
+                # Sidebar inputs for match schedules
+                competition_id = st.sidebar.text_input('Enter Competition ID (e.g., PL for Premier League):')
+                matchday = st.sidebar.number_input('Enter Matchday:', min_value=1)
 
-# Fetch and display teams
-teams_df = fetch_teams()
-if teams_df is not None:
-    team_names = teams_df['name'].tolist()
-    selected_team = st.sidebar.selectbox('Select Team:', team_names)
-    team_id = teams_df[teams_df['name'] == selected_team]['id'].iloc[0]
-else:
-    st.sidebar.write("No teams data available.")
+                # Fetch match schedules data based on user input
+                if competition_id:
+                    match_schedules_data = fetch_match_schedules_data(competition_id, matchday)
 
-status = st.sidebar.selectbox('Select Match Status:', ['SCHEDULED', 'FINISHED', 'POSTPONED', 'CANCELED', 'IN_PLAY', 'PAUSED'])
+                    # Display the fetched match schedules data
+                    if match_schedules_data and 'matches' in match_schedules_data:
+                        # Extract relevant match information
+                        match_info = extract_match_info(match_schedules_data['matches'])
+                        
+                        # Convert extracted data to DataFrame
+                        df = pd.DataFrame(match_info)
+                        
+                        # Display DataFrame
+                        st.write("### Match Schedules Data")
+                        st.dataframe(df)
+                    else:
+                        st.write("No match schedules data available for the specified input.")
+                else:
+                    st.write("Please enter a Competition ID.")
 
-# Button to fetch matches
-if st.sidebar.button('Fetch Matches'):
-    # Fetch team's matches based on filters
-    matches_df = fetch_team_matches(team_id, status=status)
-    
-    # Display the fetched matches data
-    if matches_df is not None:
-        st.write("### Matches Data")
-        st.dataframe(matches_df)
-    else:
-        st.write("No matches data available for the specified filters.")
+                # Fetch and display teams
+                teams_df = fetch_teams()
+                if teams_df is not None:
+                    team_names = teams_df['name'].tolist()
+                    selected_team = st.sidebar.selectbox('Select Team:', team_names)
+                    team_id = teams_df[teams_df['name'] == selected_team]['id'].iloc[0]
+                else:
+                    st.sidebar.write("No teams data available.")
+
+                status = st.sidebar.selectbox('Select Match Status:', ['SCHEDULED', 'FINISHED', 'POSTPONED', 'CANCELED', 'IN_PLAY', 'PAUSED'])
+
+                # Button to fetch matches
+                if st.sidebar.button('Fetch Matches'):
+                    # Fetch team's matches based on filters
+                    matches_df = fetch_team_matches(team_id, status=status)
+                    
+                    # Display the fetched matches data
+                    if matches_df is not None:
+                        st.write("### Matches Data")
+                        st.dataframe(matches_df)
+                    else:
+                        st.write("No matches data available for the specified filters.")
+            else:
+                st.error("Invalid username or password")
+
+    elif choice == "Register":
+        st.title("User Registration")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.button("Register"):
+            register(username, password)
+
+if __name__ == "__main__":
+    main()
